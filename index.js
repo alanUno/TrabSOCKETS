@@ -40,26 +40,6 @@ io.on('connection', (socket)=>{
 
 
 var bodyParser = require('body-parser');
-io.on('connection', (socket)=>{
-    console.log('usuario conectado');
-    
-    socket.on('join', (channel) => {
-        socket.join(channel);
-        console.log('Usuário entrou no canal:', channel);
-    });
-
-    socket.on('leave', (channel) => {
-        socket.leave(channel);
-        console.log('Usuário saiu do canal:', channel);
-    });
-
-    socket.on('mensagem', (data)=>{
-        console.log(data);
-        io.to(data.channel).emit('mensagem', data);
-    });
-});
-
-
 db = 'mongodb://localhost:27017/local'
 
 mongoose.connect(db, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -84,7 +64,6 @@ app.get('/mensagens', (req, res) =>{
 });
 
 app.post('/mensagem',(req, res)=> {
-    console.log('opa');
     var mensagem = new Mensagem(req.body);
     mensagem.save((err)=>{
         if(err){
@@ -94,6 +73,7 @@ app.post('/mensagem',(req, res)=> {
             io.to(req.body.channel).emit('mensagem', req.body);
         }
     })
+    console.log('Mensagem Enviada');
 });
 
 server.listen(3000, () => {
