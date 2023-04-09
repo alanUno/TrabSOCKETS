@@ -1,82 +1,89 @@
-var express = require('express');
-var app = express();
-var http = require('http');
-
+const express = require('express');
+const app = express();
+const http = require('http');
 const server = http.createServer(app);
-
 const { Server } = require('socket.io');
-
 const io = new Server(server);
-
 const mongoose = require('mongoose');
-mongoose.set('strictQuery', false);
+const bodyParser = require('body-parser');
 
-function enviarMensagem(mensagem){
-    $.post('http://127.0.0.1:3000/mensagem', {
-        nome: mensagem.nome,
-        mensagem: mensagem.mensagem,
-        channel: $("#canal").val()
-    });
-}
-
-io.on('connection', (socket)=>{
-    console.log('usuario conectado');
-
-    socket.on('join', (channel) => {
-        socket.join(channel);
-        console.log('Usuário entrou no canal:', channel);
-    });
-
-    socket.on('leave', (channel) => {
-        socket.leave(channel);
-        console.log('Usuário saiu do canal:', channel);
-    });
-
-    socket.on('mensagem', (data)=>{
-        console.log(data);
-        io.to(data.channel).emit('mensagem', data);
-    });
+// Conectar ao banco de dados
+const db = 'mongodb://localhost:27017/local';
+mongoose.connect(db, (err) => {
+  if (err) {
+    console.error('Erro ao conectar ao banco de dados:', err);
+  } else {
+    console.log('Conectado ao banco de dados');
+  }
 });
 
-
-var bodyParser = require('body-parser');
-db = 'mongodb://localhost:27017/local'
-
-mongoose.connect(db, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
-    console.log('Conectado ao banco de dados MongoDB');
-  })
-  .catch((err) => {
-    console.log('Erro ao conectar ao banco de dados MongoDB', err);
+// Definir o modelo de mensagens
+const Mensagem = mongoose.model('Mensagem', {
+    nome: String,
+    mensagem: String,
+    canal: String
   });
 
-var Mensagem = mongoose.model('Mensagem', {nome: String, mensagem: String });
-
-
+// Configurar o servidor
 app.use(express.static(__dirname));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: false}));
+app.use(bodyParser.urlencoded({ extended: false }));
 
-app.get('/mensagens', (req, res) =>{
-    Mensagem.find({},(err, mensagens)=>{
-        res.send(mensagens);
+// Obter todas as mensagens do banco de dados
+app.get('/mensagens', (req, res) => {
+  Mensagem.find({}, (err, mensagens) => {
+    if (err) {
+      console.error('Erro ao obter mensagens:', err);
+      res.sendStatus(500);
+    } else {
+      res.send(mensagens);
+    }
+  });
+});
+
+// Enviar mensagem para todos os clientes conectados
+io.on('connection', (socket) => {
+  console.log('Usuário conectado');
+
+  // Adicionar o socket à room correspondente ao canal selecionado pelo usuário
+  socket.on('join', (canal) => {
+    socket.join(canal);
+    console.log(`Usuário entrou no canal ${canal}`);
+  });
+
+  // Enviar mensagem para os clientes na mesma room (canal)
+socket.on('mensagem', (msg) => {
+  console.log(`Mensagem recebida no canal ${msg.canal}: ${msg.mensagem}`);
+  io.to(msg.canal).emit('mensagem', msg);
+  const mensagem = new Mensagem({
+    nome: msg.nome,
+    mensagem: msg.mensagem,
+    canal: msg.canal
+  });
+  mensagem.save((err) => {
+    if (err) {
+      console.error('Erro ao salvar mensagem:', err);
+    } else {
+      console.log('Mensagem salva no banco de dados');
+    }
+  });
+});
+
+  // Remover o socket da room correspondente ao canal ao desconectar
+  socket.on('disconnect', () => {
+    console.log('Usuário desconectado');
+    const rooms = Object.keys(socket.rooms);
+    rooms.forEach((room) => {
+      if (room !== socket.id) {
+        socket.leave(room);
+        console.log(`Usuário saiu do canal ${room}`);
+      }
     });
+  });
 });
 
-app.post('/mensagem',(req, res)=> {
-    var mensagem = new Mensagem(req.body);
-    mensagem.save((err)=>{
-        if(err){
-            res.sendStatus(500);
-        } else {
-            res.sendStatus(200);
-            io.to(req.body.channel).emit('mensagem', req.body);
-        }
-    })
-    console.log('Mensagem Enviada');
+// Iniciar o servidor
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
-
-server.listen(3000, () => {
-    console.log('Server port', server.address().port);
-});
-
